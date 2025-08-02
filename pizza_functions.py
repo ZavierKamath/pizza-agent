@@ -84,10 +84,17 @@ PIZZA_MENU = {
 
 def get_menu():
     """Get the complete pizza menu."""
+    # Create simple, conversational menu overview
+    specialty_names = [pizza["name"] for pizza in PIZZA_MENU["specialty_pizzas"].values()]
+    
+    # Simple, friendly overview without overwhelming details
+    speech_message = f"We have six specialty pizzas: {', '.join(specialty_names[:3])}, {', '.join(specialty_names[3:5])}, and {specialty_names[5]}. We also do build-your-own pizzas, plus sides and drinks. All pizzas come in small, medium, large, and extra large. What sounds good to you?"
+    
     return {
         "restaurant": "Zavier's Pizza",
         "menu": PIZZA_MENU,
-        "message": "Here's our complete menu with all available items, sizes, and prices."
+        "message": speech_message,
+        "speech_optimized": True
     }
 
 
@@ -138,13 +145,35 @@ def place_pizza_order(customer_name, phone, order_type, address, items):
     
     ORDERS_DB["orders"][order_id] = order
     
+    # Create natural speech confirmation message
+    item_summary = []
+    for item in processed_items[:2]:  # Limit to first 2 items for brevity
+        if item["type"] == "pizza":
+            item_summary.append(f"{item['quantity']} {item['name']}")
+        else:
+            item_summary.append(f"{item['quantity']} {item['name']}")
+    
+    items_text = ", ".join(item_summary)
+    if len(processed_items) > 2:
+        items_text += f" and {len(processed_items) - 2} more item{'s' if len(processed_items) - 2 > 1 else ''}"
+    
+    speech_message = f"Perfect! Order number {order_id} is confirmed for {customer_name}... You ordered {items_text}, total is ${order['total_price']:.2f}"
+    
+    if order_type == "delivery":
+        speech_message += f" for delivery to {address}. It'll be ready in {order['estimated_time']}"
+    else:
+        speech_message += f" for pickup. It'll be ready in {order['estimated_time']}"
+    
+    speech_message += ". Thank you for choosing Zavier's Pizza!"
+    
     return {
         "order_id": order_id,
-        "message": f"Order #{order_id} confirmed for {customer_name}",
+        "message": speech_message,
         "order_type": order_type,
         "total_price": order["total_price"],
         "estimated_time": order["estimated_time"],
-        "items_count": len(processed_items)
+        "items_count": len(processed_items),
+        "speech_optimized": True
     }
 
 
@@ -168,7 +197,7 @@ def _process_order_item(item):
 
 def _process_pizza_item(item, quantity):
     """Process a pizza order item."""
-    pizza_name = item.get("name", "").lower()
+    pizza_name = _normalize_pizza_name(item.get("name", ""))
     size = item.get("size", "").lower()
     toppings = item.get("toppings", [])
     
@@ -228,7 +257,7 @@ def _process_pizza_item(item, quantity):
 
 def _process_side_item(item, quantity):
     """Process a side order item."""
-    side_name = item.get("name", "").lower()
+    side_name = _normalize_side_name(item.get("name", ""))
     
     if side_name not in PIZZA_MENU["sides"]:
         available_sides = list(PIZZA_MENU["sides"].keys())
@@ -251,7 +280,7 @@ def _process_side_item(item, quantity):
 
 def _process_drink_item(item, quantity):
     """Process a drink order item."""
-    drink_name = item.get("name", "").lower()
+    drink_name = _normalize_drink_name(item.get("name", ""))
     
     if drink_name not in PIZZA_MENU["drinks"]:
         available_drinks = list(PIZZA_MENU["drinks"].keys())
@@ -270,6 +299,76 @@ def _process_drink_item(item, quantity):
         },
         "price": total_price
     }
+
+
+def _normalize_pizza_name(pizza_name):
+    """Normalize pizza names to match menu keys."""
+    # Create a mapping of display names and variations to menu keys
+    pizza_aliases = {
+        "pepperoni classic": "pepperoni",
+        "meat lovers": "meat_lovers",
+        "build your own": "build_your_own",
+        "build-your-own": "build_your_own",
+        "custom": "build_your_own"
+    }
+    
+    # Convert to lowercase for comparison
+    normalized = pizza_name.lower().strip()
+    
+    # Check if it's an alias
+    if normalized in pizza_aliases:
+        return pizza_aliases[normalized]
+    
+    # Return as-is if no alias found
+    return normalized
+
+
+def _normalize_side_name(side_name):
+    """Normalize side names to match menu keys."""
+    # Create a mapping of display names and variations to menu keys
+    side_aliases = {
+        "garlic bread": "garlic_bread",
+        "chicken wings (8 pcs)": "chicken_wings",
+        "chicken wings": "chicken_wings",
+        "wings": "chicken_wings",
+        "breadsticks (6 pcs)": "breadsticks",
+        "caesar salad": "caesar_salad",
+        "garden salad": "garden_salad"
+    }
+    
+    # Convert to lowercase for comparison
+    normalized = side_name.lower().strip()
+    
+    # Check if it's an alias
+    if normalized in side_aliases:
+        return side_aliases[normalized]
+    
+    # Return as-is if no alias found
+    return normalized
+
+
+def _normalize_drink_name(drink_name):
+    """Normalize drink names to match menu keys."""
+    # Create a mapping of display names and variations to menu keys
+    drink_aliases = {
+        "coca-cola (2l)": "coke",
+        "coca-cola": "coke",
+        "coca cola": "coke",
+        "pepsi (2l)": "pepsi",
+        "sprite (2l)": "sprite",
+        "bottled water": "water",
+        "orange juice": "orange_juice"
+    }
+    
+    # Convert to lowercase for comparison
+    normalized = drink_name.lower().strip()
+    
+    # Check if it's an alias
+    if normalized in drink_aliases:
+        return drink_aliases[normalized]
+    
+    # Return as-is if no alias found
+    return normalized
 
 
 def _normalize_topping_name(topping_name):
@@ -326,6 +425,27 @@ def lookup_order(order_id):
     
     order = ORDERS_DB["orders"].get(order_id_int)
     if order:
+        # Create natural speech order summary
+        item_summary = []
+        for item in order["items"][:2]:  # Limit to first 2 items for brevity
+            if item["type"] == "pizza":
+                item_summary.append(f"{item['quantity']} {item['name']}")
+            else:
+                item_summary.append(f"{item['quantity']} {item['name']}")
+        
+        items_text = ", ".join(item_summary)
+        if len(order["items"]) > 2:
+            items_text += f" and {len(order['items']) - 2} more item{'s' if len(order['items']) - 2 > 1 else ''}"
+        
+        speech_message = f"Found your order! Order number {order_id} for {order['customer_name']}... You ordered {items_text}, total ${order['total_price']:.2f}"
+        
+        if order["order_type"] == "delivery" and order.get("address"):
+            speech_message += f" for delivery to {order['address']}"
+        else:
+            speech_message += f" for pickup"
+        
+        speech_message += f". Status is {order['status']}, estimated time {order['estimated_time']}."
+        
         return {
             "order_id": order_id,
             "customer_name": order["customer_name"],
@@ -335,9 +455,11 @@ def lookup_order(order_id):
             "items": order["items"],
             "total_price": order["total_price"],
             "status": order["status"],
-            "estimated_time": order["estimated_time"]
+            "estimated_time": order["estimated_time"],
+            "message": speech_message,
+            "speech_optimized": True
         }
-    return {"error": f"Order #{order_id} not found"}
+    return {"error": f"Sorry, I couldn't find order number {order_id}. Could you please double-check that number?"}
 
 
 # Function mapping dictionary
