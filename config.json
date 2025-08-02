@@ -1,0 +1,107 @@
+{
+    "type": "Settings",
+    "audio": {
+        "input": {
+            "encoding": "mulaw",
+            "sample_rate": 8000
+        },
+        "output": {
+            "encoding": "mulaw",
+            "sample_rate": 8000,
+            "container": "none"
+        }
+    },
+    "agent": {
+        "language": "en",
+        "listen": {
+            "provider": {
+                "type": "deepgram",
+                "model": "nova-3",
+                "keyterms": ["hello", "goodbye"]
+            }
+        },
+        "think": {
+            "provider": {
+                "type": "open_ai",
+                "model": "gpt-4o-mini",
+                "temperature": 0.7
+            },
+            "prompt": "You are a professional pizza ordering assistant for Zavier's Pizza. You can: 1) Show the menu with get_menu, 2) Place pizza orders with place_pizza_order, 3) Look up orders with lookup_order. \n\nIMPORTANT ORDER PROCESS: When a customer wants to place an order, collect information in this exact sequence, asking for ONE piece of information at a time and waiting for their response before moving to the next:\n1. First ask for their name and wait for response\n2. Then ask for their phone number and wait for response\n3. Then ask if it's for pickup or delivery and wait for response\n4. If delivery, ask for their address and wait for response\n5. Then help them with their order (pizzas, sides, drinks)\n6. Finally confirm all details before placing the order\n7. After successfully placing an order, thank the customer and let them know the call will end shortly\n\nORDER COMPLETION: Once you successfully place an order, provide the order details, thank the customer, and inform them that the call will automatically end in about 30 seconds to complete the transaction. Be polite and professional in your closing.\n\nBe patient and only ask for one piece of information at a time. Wait for each response before proceeding to the next question.",
+            "functions": [
+              {
+                "name": "get_menu",
+                "description": "Get the complete pizza menu with all available items, sizes, and prices. Use this function when: A customer asks about the menu, wants to know what's available, asks about prices, or wants to see options. This shows specialty pizzas, build-your-own options, sizes, toppings, sides, and drinks.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {},
+                  "required": []
+                }
+              },
+              {
+                "name": "place_pizza_order",
+                "description": "Place a complete pizza order for a customer. Use this function when: A customer wants to place an order, has decided what they want, and you have collected all required information. BEFORE using this function, ensure you have: customer name, phone number, order type (pickup/delivery), address (if delivery), and complete item details. The items parameter should include all pizzas, sides, and drinks with full specifications.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "customer_name": {
+                      "type": "string",
+                      "description": "Customer's full name. Ask them to spell it clearly if needed."
+                    },
+                    "phone": {
+                      "type": "string",
+                      "description": "Customer's phone number for order contact."
+                    },
+                    "order_type": {
+                      "type": "string",
+                      "description": "Either 'pickup' or 'delivery'."
+                    },
+                    "address": {
+                      "type": "string",
+                      "description": "Customer's delivery address. Required only for delivery orders, can be empty string for pickup."
+                    },
+                    "items": {
+                      "type": "array",
+                      "description": "Array of order items. Each item must have: type (pizza/side/drink), name, quantity. Pizza items also need size and toppings array.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {"type": "string"},
+                          "name": {"type": "string"},
+                          "size": {"type": "string"},
+                          "toppings": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                          },
+                          "quantity": {"type": "integer"}
+                        }
+                      }
+                    }
+                  },
+                  "required": ["customer_name", "phone", "order_type", "address", "items"]
+                }
+              },
+              {
+                "name": "lookup_order",
+                "description": "Look up an existing pizza order by its ID number. Use this function when: A customer asks about their order status, wants to check an existing order, or provides an order number to look up. This will show all order details including items, customer info, and current status.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "order_id": {
+                      "type": "integer",
+                      "description": "The order ID number to look up. Must be a valid order number."
+                    }
+                  },
+                  "required": ["order_id"]
+                }
+              }
+            ]
+        },
+        "speak": {
+            "provider": {
+                "type": "deepgram",
+                "model": "aura-2-helena-en"
+            }
+        },
+        "greeting": "Hi, Welcome to Zavier's Pizza! How may I take your order?"
+    }
+}

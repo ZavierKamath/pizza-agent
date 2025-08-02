@@ -1,0 +1,11 @@
+[project]
+name = "pizza-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "python-dotenv>=1.1.1",
+    "twilio>=9.7.0",
+    "websockets>=15.0.1",
+]
