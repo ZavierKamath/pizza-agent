@@ -5,6 +5,9 @@ import websockets
 import os
 from dotenv import load_dotenv
 from twilio.rest import Client
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+import threading
 
 load_dotenv()
 
@@ -16,6 +19,130 @@ conversation_state = {
     "call_should_end": False,
     "grace_period_start": None
 }
+
+class DashboardHTTPHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for dashboard API endpoints"""
+    
+    def do_GET(self):
+        """Handle GET requests"""
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
+        
+        if path == '/api/dashboard':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+            
+            # Get dashboard data
+            dashboard_data = FUNCTION_MAP['get_dashboard_data']()
+            self.wfile.write(json.dumps(dashboard_data).encode())
+            
+        elif path == '/api/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "healthy"}).encode())
+            
+        else:
+            self.send_response(404)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Not found"}).encode())
+    
+    def do_POST(self):
+        """Handle POST requests"""
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
+        
+        if path.startswith('/api/orders/') and path.endswith('/complete'):
+            # Extract order ID from path like /api/orders/123/complete
+            try:
+                order_id = int(path.split('/')[-2])
+                
+                # Update order status to completed
+                result = FUNCTION_MAP['update_order_status'](order_id, 'completed')
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode())
+                
+            except ValueError:
+                self.send_response(400)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid order ID"}).encode())
+                
+        elif path == '/api/queue/update':
+            # Read request body
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            
+            try:
+                data = json.loads(post_data.decode())
+                result = FUNCTION_MAP['update_call_queue'](
+                    active_calls=data.get('active_calls'),
+                    customers_waiting=data.get('customers_waiting')
+                )
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode())
+                
+            except json.JSONDecodeError:
+                self.send_response(400)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid JSON"}).encode())
+        else:
+            self.send_response(404)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Not found"}).encode())
+    
+    def do_OPTIONS(self):
+        """Handle OPTIONS requests for CORS preflight"""
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+    
+    def log_message(self, format, *args):
+        """Override to reduce HTTP server logging"""
+        pass
+
+
+def start_http_server():
+    """Start the HTTP server for dashboard API"""
+    httpd = HTTPServer(('localhost', 8000), DashboardHTTPHandler)
+    print("Dashboard API server started on http://localhost:8000")
+    httpd.serve_forever()
 
 def sts_connect():
     api_key = os.getenv("DEEPGRAM_API_KEY")
@@ -247,8 +374,14 @@ async def twilio_handler(twilio_ws):
 
 
 async def main():
+    # Start HTTP server in a separate thread
+    http_thread = threading.Thread(target=start_http_server, daemon=True)
+    http_thread.start()
+    
+    # Start WebSocket server
     await websockets.serve(twilio_handler, "localhost", 5000)
-    print("Started server.")
+    print("Started WebSocket server on localhost:5000")
+    print("Dashboard API available at http://localhost:8000")
     await asyncio.Future()
 
 

@@ -1,6 +1,66 @@
 # Simple in-memory storage
 ORDERS_DB = {"orders": {}, "next_id": 1}
 
+# Call queue management
+CALL_QUEUE = {
+    "active_calls": 2,
+    "customers_waiting": 1
+}
+
+# Add some test data for demonstration
+def _add_test_data():
+    import datetime
+    
+    # Sample orders for testing
+    test_orders = [
+        {
+            "customer_name": "John Smith",
+            "phone": "555-0123",
+            "order_type": "pickup",
+            "address": "",
+            "items": [
+                {"type": "pizza", "name": "Pepperoni Classic (Large)", "size": "large", "toppings": ["pepperoni"], "quantity": 1}
+            ],
+            "total_price": 18.99,
+            "estimated_time": "25-35 minutes",
+            "kitchen_status": "pending"
+        },
+        {
+            "customer_name": "Sarah Johnson",
+            "phone": "555-0456",
+            "order_type": "delivery",
+            "address": "123 Main St, Pizza City",
+            "items": [
+                {"type": "pizza", "name": "Supreme (Medium)", "size": "medium", "toppings": ["pepperoni", "sausage", "bell_peppers"], "quantity": 2},
+                {"type": "side", "name": "Garlic Bread", "quantity": 1}
+            ],
+            "total_price": 38.97,
+            "estimated_time": "35-45 minutes",
+            "kitchen_status": "in_preparation"
+        }
+    ]
+    
+    for i, order_data in enumerate(test_orders, 1):
+        order = {
+            "id": i,
+            "customer_name": order_data["customer_name"],
+            "phone": order_data["phone"],
+            "order_type": order_data["order_type"],
+            "address": order_data["address"],
+            "items": order_data["items"],
+            "total_price": order_data["total_price"],
+            "status": "confirmed",
+            "estimated_time": order_data["estimated_time"],
+            "timestamp": datetime.datetime.now().isoformat(),
+            "kitchen_status": order_data["kitchen_status"]
+        }
+        ORDERS_DB["orders"][i] = order
+    
+    ORDERS_DB["next_id"] = len(test_orders) + 1
+
+# Initialize test data
+_add_test_data()
+
 # Zavier's Pizza Menu
 PIZZA_MENU = {
     "sizes": {
@@ -131,6 +191,8 @@ def place_pizza_order(customer_name, phone, order_type, address, items):
     order_id = ORDERS_DB["next_id"]
     ORDERS_DB["next_id"] += 1
     
+    import datetime
+    
     order = {
         "id": order_id,
         "customer_name": customer_name,
@@ -140,7 +202,9 @@ def place_pizza_order(customer_name, phone, order_type, address, items):
         "items": processed_items,
         "total_price": round(total_price, 2),
         "status": "confirmed",
-        "estimated_time": "25-35 minutes" if order_type == "pickup" else "35-45 minutes"
+        "estimated_time": "25-35 minutes" if order_type == "pickup" else "35-45 minutes",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "kitchen_status": "pending"  # pending, in_preparation, ready, completed
     }
     
     ORDERS_DB["orders"][order_id] = order
@@ -462,9 +526,65 @@ def lookup_order(order_id):
     return {"error": f"Sorry, I couldn't find order number {order_id}. Could you please double-check that number?"}
 
 
+def get_dashboard_data():
+    """Get current dashboard data including queue status and active orders."""
+    # Get orders that need preparation
+    active_orders = []
+    for order in ORDERS_DB["orders"].values():
+        if order["kitchen_status"] in ["pending", "in_preparation"]:
+            active_orders.append(order)
+    
+    # Sort by timestamp (oldest first)
+    active_orders.sort(key=lambda x: x["timestamp"])
+    
+    return {
+        "call_queue": CALL_QUEUE.copy(),
+        "active_orders": active_orders,
+        "total_orders_today": len(ORDERS_DB["orders"])
+    }
+
+
+def update_order_status(order_id, kitchen_status):
+    """Update the kitchen status of an order."""
+    try:
+        order_id_int = int(order_id)
+    except ValueError:
+        return {"error": "Order ID must be a number"}
+    
+    if order_id_int not in ORDERS_DB["orders"]:
+        return {"error": f"Order {order_id} not found"}
+    
+    valid_statuses = ["pending", "in_preparation", "ready", "completed"]
+    if kitchen_status not in valid_statuses:
+        return {"error": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"}
+    
+    ORDERS_DB["orders"][order_id_int]["kitchen_status"] = kitchen_status
+    
+    return {
+        "success": True,
+        "order_id": order_id_int,
+        "new_status": kitchen_status,
+        "message": f"Order {order_id} status updated to {kitchen_status}"
+    }
+
+
+def update_call_queue(active_calls=None, customers_waiting=None):
+    """Update call queue status."""
+    if active_calls is not None:
+        CALL_QUEUE["active_calls"] = max(0, active_calls)
+    
+    if customers_waiting is not None:
+        CALL_QUEUE["customers_waiting"] = max(0, customers_waiting)
+    
+    return {"success": True, "queue_status": CALL_QUEUE.copy()}
+
+
 # Function mapping dictionary
 FUNCTION_MAP = {
     'get_menu': get_menu,
     'place_pizza_order': place_pizza_order,
-    'lookup_order': lookup_order
+    'lookup_order': lookup_order,
+    'get_dashboard_data': get_dashboard_data,
+    'update_order_status': update_order_status,
+    'update_call_queue': update_call_queue
 }
