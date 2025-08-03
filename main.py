@@ -20,6 +20,9 @@ conversation_state = {
     "grace_period_start": None
 }
 
+# Call queue tracking
+ACTIVE_CALLS = set()  # Track unique call SIDs to prevent double-counting
+
 class DashboardHTTPHandler(BaseHTTPRequestHandler):
     """HTTP request handler for dashboard API endpoints"""
     
@@ -175,6 +178,18 @@ def end_twilio_call(call_sid):
         client = Client(account_sid, auth_token)
         call = client.calls(call_sid).update(status='completed')
         print(f"Call {call_sid} ended successfully")
+        
+        # Track call end for dashboard
+        global ACTIVE_CALLS
+        if call_sid in ACTIVE_CALLS:
+            ACTIVE_CALLS.remove(call_sid)
+            current_count = len(ACTIVE_CALLS)
+            try:
+                FUNCTION_MAP['update_call_queue'](active_calls=current_count)
+                print(f"Grace period call ended: {call_sid}. Active calls: {current_count}")
+            except Exception as e:
+                print(f"Error updating call queue on grace period end: {e}")
+        
         return True
     except Exception as e:
         print(f"Error ending call {call_sid}: {e}")
@@ -312,6 +327,7 @@ async def sts_receiver(sts_ws, twilio_ws, streamsid_queue):
 async def twilio_receiver(twilio_ws, audio_queue, streamsid_queue, call_info_queue):
     BUFFER_SIZE = 20 * 160
     inbuffer = bytearray(b"")
+    current_call_sid = None  # Track the current call SID
 
     async for message in twilio_ws:
         try:
@@ -323,9 +339,21 @@ async def twilio_receiver(twilio_ws, audio_queue, streamsid_queue, call_info_que
                 start = data["start"]
                 streamsid = start["streamSid"]
                 call_sid = start["callSid"]
+                current_call_sid = call_sid  # Store for later use
                 streamsid_queue.put_nowait(streamsid)
                 call_info_queue.put_nowait({"call_sid": call_sid, "stream_sid": streamsid})
                 print(f"Call SID: {call_sid}, Stream SID: {streamsid}")
+                
+                # Track call start for dashboard
+                global ACTIVE_CALLS
+                if call_sid not in ACTIVE_CALLS:
+                    ACTIVE_CALLS.add(call_sid)
+                    current_count = len(ACTIVE_CALLS)
+                    try:
+                        FUNCTION_MAP['update_call_queue'](active_calls=current_count)
+                        print(f"Call started: {call_sid}. Active calls: {current_count}")
+                    except Exception as e:
+                        print(f"Error updating call queue on start: {e}")
             elif event == "connected":
                 continue
             elif event == "media":
@@ -334,6 +362,15 @@ async def twilio_receiver(twilio_ws, audio_queue, streamsid_queue, call_info_que
                 if media["track"] == "inbound":
                     inbuffer.extend(chunk)
             elif event == "stop":
+                # Track call end for dashboard
+                if current_call_sid and current_call_sid in ACTIVE_CALLS:
+                    ACTIVE_CALLS.remove(current_call_sid)
+                    current_count = len(ACTIVE_CALLS)
+                    try:
+                        FUNCTION_MAP['update_call_queue'](active_calls=current_count)
+                        print(f"Call ended: {current_call_sid}. Active calls: {current_count}")
+                    except Exception as e:
+                        print(f"Error updating call queue on stop: {e}")
                 break
 
             while len(inbuffer) >= BUFFER_SIZE:
@@ -341,6 +378,15 @@ async def twilio_receiver(twilio_ws, audio_queue, streamsid_queue, call_info_que
                 audio_queue.put_nowait(chunk)
                 inbuffer = inbuffer[BUFFER_SIZE:]
         except:
+            # Handle unexpected disconnection - clean up call tracking
+            if current_call_sid and current_call_sid in ACTIVE_CALLS:
+                ACTIVE_CALLS.remove(current_call_sid)
+                current_count = len(ACTIVE_CALLS)
+                try:
+                    FUNCTION_MAP['update_call_queue'](active_calls=current_count)
+                    print(f"Call disconnected unexpectedly: {current_call_sid}. Active calls: {current_count}")
+                except Exception as e:
+                    print(f"Error updating call queue on disconnect: {e}")
             break
 
 async def twilio_handler(twilio_ws):
@@ -374,6 +420,12 @@ async def twilio_handler(twilio_ws):
 
 
 async def main():
+    # Reset call queue on server startup
+    global ACTIVE_CALLS
+    ACTIVE_CALLS.clear()
+    FUNCTION_MAP['update_call_queue'](active_calls=0, customers_waiting=0)
+    print("Call queue reset to 0 on server startup")
+    
     # Start HTTP server in a separate thread
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()

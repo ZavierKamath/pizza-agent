@@ -1,10 +1,12 @@
+import threading
+
 # Simple in-memory storage
 ORDERS_DB = {"orders": {}, "next_id": 1}
 
 # Call queue management
 CALL_QUEUE = {
-    "active_calls": 2,
-    "customers_waiting": 1
+    "active_calls": 0,
+    "customers_waiting": 0
 }
 
 # Add some test data for demonstration
@@ -568,15 +570,21 @@ def update_order_status(order_id, kitchen_status):
     }
 
 
+# Thread lock for CALL_QUEUE updates
+_call_queue_lock = threading.Lock()
+
 def update_call_queue(active_calls=None, customers_waiting=None):
-    """Update call queue status."""
-    if active_calls is not None:
-        CALL_QUEUE["active_calls"] = max(0, active_calls)
+    """Update call queue status (thread-safe)."""
+    global CALL_QUEUE
     
-    if customers_waiting is not None:
-        CALL_QUEUE["customers_waiting"] = max(0, customers_waiting)
-    
-    return {"success": True, "queue_status": CALL_QUEUE.copy()}
+    with _call_queue_lock:
+        if active_calls is not None:
+            CALL_QUEUE["active_calls"] = max(0, active_calls)
+        
+        if customers_waiting is not None:
+            CALL_QUEUE["customers_waiting"] = max(0, customers_waiting)
+        
+        return {"success": True, "queue_status": CALL_QUEUE.copy()}
 
 
 # Function mapping dictionary
